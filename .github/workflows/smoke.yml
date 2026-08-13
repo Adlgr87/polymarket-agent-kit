@@ -1,0 +1,31 @@
+name: smoke
+
+# Anti-staleness gate: a docs repo pointing at a dead endpoint is brand
+# damage. Fails loudly if the live MCP server stops answering.
+on:
+  push:
+  schedule:
+    - cron: "17 8 * * 1" # Mondays 08:17 UTC
+
+jobs:
+  live-endpoint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: MCP health
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 https://mcp.crowdintel.xyz/health)
+          echo "health -> $code"
+          test "$code" = "200"
+
+      - name: tools/list answers (auth)
+        if: ${{ vars.HAS_MCP_TOKEN == 'true' }}
+        env:
+          MCP_TOKEN: ${{ secrets.MCP_SMOKE_TOKEN }}
+        run: |
+          resp=$(curl -s --max-time 30 https://mcp.crowdintel.xyz/mcp \
+            -H "Authorization: Bearer $MCP_TOKEN" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json, text/event-stream" \
+            -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')
+          echo "$resp" | head -c 400
+          echo "$resp" | grep -q '"tools"'
