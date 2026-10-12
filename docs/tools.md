@@ -1,4 +1,4 @@
-# Tool reference — 19 read-only tools
+# Tool reference — 18 read-only tools
 
 Generated against the live server at `https://mcp.crowdintel.xyz/mcp` (2026-08-12). For exact parameter schemas, call `tools/list` with your token — the server's inline schemas are the source of truth.
 
@@ -6,7 +6,7 @@ Generated against the live server at `https://mcp.crowdintel.xyz/mcp` (2026-08-1
 
 | Tool | What it returns |
 | --- | --- |
-| `get_wallet_stats` | The flagship single-wallet dossier: overview, equity curve, open positions, PnL by market, biggest wins, category breakdown — assembled from ~1.7B indexed fills + pre-aggregated stats. Pull only the sections you need via `sections`. |
+| `get_wallet_stats` | The flagship single-wallet dossier: overview, equity curve, open positions, PnL by market, biggest wins, category breakdown — assembled from ~1.88B indexed fills + pre-aggregated stats. Pull only the sections you need via `sections`. |
 | `get_wallet_timing` | Entry-timing edge: does this wallet get in before the crowd and before the odds move? |
 | `get_wallet_alerts` | Most recent insider-score alerts for a wallet, newest first, with score breakdowns. |
 | `search_wallets` | Screen the leaderboard by min PnL and/or category, or free-text address/name lookup. |
@@ -49,12 +49,11 @@ Generated against the live server at `https://mcp.crowdintel.xyz/mcp` (2026-08-1
 | `get_investigation` | One curated anomaly write-up with its frozen evidence. |
 | `list_investigations` | All published investigations. |
 
-## Leaderboard & calibration
+## Leaderboard
 
 | Tool | What it returns |
 | --- | --- |
 | `get_leaderboard` | Ranked wallets by PnL, win rate, volume, or category metrics. |
-| `get_calibration` | Crowd calibration curves + favorite-longshot bias by category. |
 
 ## Auth & limits
 

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.crowdintel-xyz/polymarket-agent-kit",
+  "title": "CrowdIntel — Polymarket Wallet Intelligence",
+  "description": "Polymarket wallet intelligence for AI agents: scored wallets, insider signals, whale flow.",
+  "version": "1.0.0",
+  "websiteUrl": "https://crowdintel.xyz",
+  "repository": {
+    "url": "https://github.com/crowdintel-xyz/polymarket-agent-kit",
+    "source": "github",
+    "id": "1332648336"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.crowdintel.xyz/mcp"
+    }
+  ]
+}

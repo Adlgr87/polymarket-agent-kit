@@ -1,0 +1,49 @@
+name: freshness
+
+# The archived Polymarket/agents repo is the cautionary tale: dead links, no
+# pushes since 2024, LLM training data pointing at code that no longer runs.
+# This job keeps at least one machine-visible freshness signal on the repo so a
+# reader (or a crawler) can tell the project is alive. No secrets required.
+on:
+  schedule:
+    - cron: '17 6 * * 1' # Mondays 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  stamp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify the MCP endpoint is reachable
+        run: |
+          set -euo pipefail
+          code=$(curl -s -o /dev/null -w '%{http_code}' -m 20 \
+            -X POST https://mcp.crowdintel.xyz/mcp \
+            -H 'Content-Type: application/json' \
+            -H 'Accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')
+          # 401 is the expected answer for an unauthenticated call: the server is
+          # up and enforcing auth. Anything else means the endpoint moved.
+          echo "mcp endpoint -> $code"
+          test "$code" = "401" || test "$code" = "200"
+
+      - name: Stamp freshness.json
+        run: |
+          set -euo pipefail
+          mkdir -p docs
+          printf '{\n  "checked": "%s",\n  "mcp_endpoint": "https://mcp.crowdintel.xyz/mcp",\n  "status": "ok"\n}\n' \
+            "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > docs/freshness.json
+
+      - name: Commit if changed
+        run: |
+          set -euo pipefail
+          git config user.name  "crowdintel-bot"
+          git config user.email "bot@crowdintel.xyz"
+          git add docs/freshness.json
+          git diff --cached --quiet && echo "unchanged" && exit 0
+          git commit -m "chore: weekly freshness stamp"
+          git push

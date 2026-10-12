@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "crowdintel": {
+      "type": "http",
+      "url": "https://mcp.crowdintel.xyz/mcp",
+      "headers": {
+        "Authorization": "Bearer cint_mcp_YOUR_TOKEN_HERE"
+      }
+    }
+  }
+}
