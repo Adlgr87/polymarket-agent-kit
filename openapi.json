@@ -1,0 +1,5866 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "CrowdIntel API",
+    "version": "1.1.0",
+    "summary": "Read-only on-chain Polymarket smart-money intelligence.",
+    "description": "The CrowdIntel API is a public, **read-only** intelligence API — free to test on every plan — over CrowdIntel's Polymarket smart-money data: whale signals, wallet intel, leaderboards, curated wallet cohorts, market sentiment, on-chain trades, sybil clusters, investigations, a live on-demand market analyze object, plus two write endpoints (webhook subscriptions and backtest jobs).\n\n## Authentication\n\nEvery request requires a bearer API key:\n\n```\nAuthorization: Bearer cint_api_xxxxxxxxxxxxxxxxxxxxxxxx\n```\n\nKeys are minted in the dashboard at `/settings/api` — free on every plan, no credit card. Keys are secrets — never expose them in a browser. The API is server-to-server only and sends no CORS headers.\n\n## Tiers\n\n**Every endpoint is reachable on every tier, including free.** A key resolves to a tier from the owner's subscription, and the tier decides throughput — not which endpoints answer.\n\n| Tier | Plan | Hourly | Monthly | Backtest runs | Webhooks |\n|------|------|--------|---------|---------------|----------|\n| `free` | Free ($0, no card) | 50/hr | 500/mo | 3/mo | 1 |\n| `terminal` | Terminal ($99/mo) | 1,000/hr | 50,000/mo | uncapped | 10 |\n| `terminal_pro` | Terminal Pro ($299/mo) | 5,000/hr | 250,000/mo | uncapped | 10 |\n\nTerminal Pro additionally carries a commercial license. Backtest jobs are also capped by in-flight concurrency (1 on free, 3 on paid). A `403 forbidden` means a per-plan allowance is exhausted (e.g. the webhook count), not that an endpoint is locked.\n\n## Rate limits\n\nLimits are enforced as **rolling hourly AND monthly** windows; whichever is hit first returns `429`. There is no overage billing and no metered top-ups. Every response that reaches a handler — plus the `429` itself — carries:\n\n- `X-RateLimit-Limit` — the binding window's cap\n- `X-RateLimit-Remaining` — calls left in the binding window\n- `X-RateLimit-Reset` — Unix epoch seconds when the binding window frees a slot\n\nA `429` additionally sets `Retry-After` (seconds). `401` and `403` are rejected before the limiter runs and carry **no** `X-RateLimit-*` headers.\n\n## Conventions\n\n- **JSON casing:** all responses are `snake_case`.\n- **Errors:** `{ \"error\": { \"code\", \"message\", \"request_id\" } }` with the matching HTTP status. The `request_id` is echoed in the `X-Request-Id` header.\n- **Cursor pagination:** cursor-paginated list endpoints return `{ \"data\": [...], \"next_cursor\": \"...\" }`. A few bounded collections use a named key instead (e.g. `{ \"webhooks\": [...] }`, `{ \"clusters\": [...] }`) — check each operation's response schema. Pass the opaque `next_cursor` back as `?cursor=` to fetch the next page; `next_cursor` is `null` on the last page. Hard `limit` and max-depth caps apply.\n- **Freshness:** near-real-time, a few minutes behind chain (indexer lag). No hard SLA on self-serve tiers.\n\n## Bundled MCP server\n\nEvery plan bundles the CrowdIntel MCP server (18 read-only tools, `cint_mcp_` keys) as the agent-native channel into Claude Desktop, Cursor, Zed, or any MCP client — 20 calls/day free, 300 on Terminal, 1,500 on Terminal Pro.",
+    "contact": {
+      "name": "CrowdIntel",
+      "url": "https://crowdintel.xyz/pricing"
+    },
+    "license": {
+      "name": "Proprietary",
+      "url": "https://crowdintel.xyz/pricing"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://crowdintel.xyz/api",
+      "description": "Production"
+    }
+  ],
+  "externalDocs": {
+    "description": "Pricing & plans",
+    "url": "https://crowdintel.xyz/pricing"
+  },
+  "tags": [
+    {
+      "name": "Signals",
+      "description": "Headline smart-money score + confidence + raw breakdown per wallet/market, the edge screener, and market movers."
+    },
+    {
+      "name": "Wallets",
+      "description": "Pseudonymous wallet profiles, per-category stats, bet-timing, correlated wallets, per-wallet trade history, and search."
+    },
+    {
+      "name": "Leaderboards",
+      "description": "Top wallets by volume / PnL / category edge."
+    },
+    {
+      "name": "Cohorts",
+      "description": "Curated wallet cohorts — named, floor-gated groups of wallets (e.g. Verified Profit Leaders, Deep-Sample Winners, Market-Maker Bots). Membership is recomputed on read from the pre-aggregated wallet rollups, so a wallet that stops clearing the floor leaves the cohort. Unrelated to the parity sampling `cohort` field on `/v1/status/parity` (`random` | `top`)."
+    },
+    {
+      "name": "Markets",
+      "description": "Market detail, whale sentiment + implied probability, trending/moving markets, and order flow."
+    },
+    {
+      "name": "Crypto",
+      "description": "The Chainlink price Polymarket settles crypto up/down markets against. Since 2026-08-07 00:00 UTC these markets settle on a TWAP rather than a single price snapshot: a 30-second window for 5-minute markets, 60 seconds for 15-minute ones. The upstream feed is live-stream only and has no history endpoint, so this series begins when CrowdIntel started recording it and no earlier moment can ever be filled in — check `/v1/crypto/twap/coverage` before assuming a quiet range is quiet."
+    },
+    {
+      "name": "Analyze",
+      "description": "On-demand, live-computed structured market intelligence object (Terminal Pro)."
+    },
+    {
+      "name": "Clusters",
+      "description": "Sybil clusters and funding-cluster graphs (Terminal Pro)."
+    },
+    {
+      "name": "Investigations",
+      "description": "Curated coordinated-wallet investigations with statistical evidence (Terminal Pro)."
+    },
+    {
+      "name": "Trades",
+      "description": "Raw on-chain trade fills — filtered, keyset-paginated (Terminal); single fill by tx hash."
+    },
+    {
+      "name": "Backtest",
+      "description": "Asynchronous historical simulation of smart-money signals (Terminal Pro)."
+    },
+    {
+      "name": "Webhooks",
+      "description": "HMAC-signed push subscriptions for new whale/insider signals (Terminal Pro)."
+    },
+    {
+      "name": "Status",
+      "description": "Data-quality transparency — nightly PnL parity scores against Polymarket's own profit API."
+    },
+    {
+      "name": "Utility",
+      "description": "Connectivity and auth probe."
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/v1/ping": {
+      "get": {
+        "tags": [
+          "Utility"
+        ],
+        "operationId": "ping",
+        "summary": "Connectivity & auth probe",
+        "description": "**Min tier: `free` (any valid key).** Verifies a key resolves, passes tier gating, rate limiting, and metering. Returns the caller's resolved tier.\n\nThe previously published path `/v1/_ping` still works — it is rewritten to this route — but `/v1/ping` is canonical.",
+        "responses": {
+          "200": {
+            "description": "Probe OK.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": true
+                    },
+                    "tier": {
+                      "$ref": "#/components/schemas/ApiTier"
+                    },
+                    "ts": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Server time when the probe was served."
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "tier",
+                    "ts"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/signals/wallet/{address}": {
+      "get": {
+        "tags": [
+          "Signals"
+        ],
+        "operationId": "getWalletSignal",
+        "summary": "Wallet smart-money signal",
+        "description": "**Min tier: `free`.** Single-wallet smart-money lookup (taste tier). Returns the headline `smart_money_score` (0-100), `confidence` (0-1), the raw signal breakdown, the wallet type, and core stats. Score comes from the persisted Insider Score V4 scorer or a Bayesian-win-rate fallback. V4 is gated: a trade only scores if the wallet bought an outcome the market priced at 35c or below; past that gate seven components set the number (entry-depth tier, wallet skill z-score, fresh-wallet concentration, minus penalties for bot behaviour, negative PnL, oversized funding clusters and infrastructure funders). `insiderBreakdown` returns those seven keys.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AddressPath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wallet signal.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletSignal"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/signals/market/{slug}": {
+      "get": {
+        "tags": [
+          "Signals"
+        ],
+        "operationId": "getMarketSignal",
+        "summary": "Market smart-money signal",
+        "description": "**Min tier: `free`.** Single-market smart-money lookup (taste tier). Combines whale sentiment with the whale-implied probability for the market slug.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SlugPath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Market signal.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketSignal"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/signals/screen": {
+      "get": {
+        "tags": [
+          "Signals"
+        ],
+        "operationId": "screenWalletsByEdge",
+        "summary": "Edge screener",
+        "description": "**Min tier: `free`.** Scope-edge screener: wallets whose per-category win rate beats their global win rate, ranked by edge. Cursor-paginated; offset depth is hard-capped at 1,000 rows.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size (default 25, max 100).",
+            "schema": {
+              "type": "integer",
+              "default": 25,
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "min_edge",
+            "in": "query",
+            "description": "Minimum edge (per-category WR minus global WR), e.g. 0.15.",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "min_bets",
+            "in": "query",
+            "description": "Minimum resolved bets in the category.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/CategoryFilter"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/WalletEdgePage"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/signals/movers": {
+      "get": {
+        "tags": [
+          "Signals"
+        ],
+        "operationId": "getMarketMovers",
+        "summary": "Market movers",
+        "description": "**Min tier: `free`.** Volume-ranked market movers over a recent window. Bounded top-N (no deep pagination).",
+        "parameters": [
+          {
+            "name": "period_hours",
+            "in": "query",
+            "description": "Look-back window in hours (default 24, max 168).",
+            "schema": {
+              "type": "integer",
+              "default": 24,
+              "minimum": 1,
+              "maximum": 168
+            }
+          },
+          {
+            "$ref": "#/components/parameters/CategoryFilter"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Top-N to return (default 20, max 100).",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Market movers.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "period_hours": {
+                      "type": "integer"
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "movers": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MarketMover"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/wallets/{address}": {
+      "get": {
+        "tags": [
+          "Wallets"
+        ],
+        "operationId": "getWallet",
+        "summary": "Wallet profile",
+        "description": "**Min tier: `free`.** Wallet profile + stats. `free` keys get the lightweight `wallet_stats`-only profile; `terminal`+ keys get the full dossier (recent trades, alerts, funding cluster).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AddressPath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wallet profile. Shape depends on caller tier (lite for `free`, full dossier for `terminal`+).",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletProfile"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/wallets/{address}/categories": {
+      "get": {
+        "tags": [
+          "Wallets"
+        ],
+        "operationId": "getWalletCategories",
+        "summary": "Per-category wallet stats",
+        "description": "**Min tier: `free`.** Per-category win rate and PnL for the wallet.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AddressPath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Per-category stats.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "address": {
+                      "$ref": "#/components/schemas/Address"
+                    },
+                    "categories": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WalletCategoryStat"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/wallets/{address}/timing": {
+      "get": {
+        "tags": [
+          "Wallets"
+        ],
+        "operationId": "getWalletTiming",
+        "summary": "Bet-timing distribution",
+        "description": "**Min tier: `free`.** Distribution of how early/late the wallet bets relative to market resolution, over its last 500 resolved trades (row-bounded scan).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AddressPath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bet-timing distribution.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletTiming"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/wallets/{address}/correlated": {
+      "get": {
+        "tags": [
+          "Wallets"
+        ],
+        "operationId": "getCorrelatedWallets",
+        "summary": "Correlated wallets",
+        "description": "**Min tier: `free`.** Wallets that traded the same markets on the same side over a 30-day window (live self-join, bounded to 20 anchor markets).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AddressPath"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Max correlated wallets (default 5, max 20).",
+            "schema": {
+              "type": "integer",
+              "default": 5,
+              "minimum": 1,
+              "maximum": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Correlated wallets.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "address": {
+                      "$ref": "#/components/schemas/Address"
+                    },
+                    "correlated": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CorrelatedWallet"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/wallets/{address}/connections": {
+      "get": {
+        "tags": [
+          "Wallets"
+        ],
+        "operationId": "getWalletConnections",
+        "summary": "Wallet funding-graph connections",
+        "description": "**Min tier: `free`.** The wallet's MEANINGFUL typed funding-graph links from `wallet_edges` — shared-CEX deposit reuse, pass-through distributors, gas providers, direct CEX links, and coordinated trade timing — each normalised to the counterparty (with an exchange label when it is a known CEX), plus the wallet's own cluster membership. Raw `usdc_out`/`usdc_up`/`usdc_out2` money-flow edges are excluded (cash movement, not a connection). **Confidence honesty:** edges with `confidence < 0.5` are heuristic/weak inferences (leads, not proof); raw on-chain transfers carry `confidence = 1`. Bounded to the single address and hard-capped by `limit` (default 100, max 500).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AddressPath"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Max connections returned (default 100, max 500).",
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "minimum": 1,
+              "maximum": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wallet connections.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletConnections"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/wallets/{address}/trades": {
+      "get": {
+        "tags": [
+          "Wallets"
+        ],
+        "operationId": "getWalletTrades",
+        "summary": "Per-wallet trade history",
+        "description": "**Min tier: `free`.** Per-wallet trade fills, newest first. Keyset cursor pagination on `(trade_timestamp, id)`; row-bounded via the proxy-wallet index (never time-bounded).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AddressPath"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size (default 20, max 100).",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/TradePage"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/wallets/search": {
+      "get": {
+        "tags": [
+          "Wallets"
+        ],
+        "operationId": "searchWallets",
+        "summary": "Search wallets",
+        "description": "**Min tier: `free`.** Search by address or Polymarket name. Bounded point search.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "description": "Search query (min 3 chars) — address fragment or Polymarket name.",
+            "schema": {
+              "type": "string",
+              "minLength": 3
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Max results (default 10, max 25).",
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "minimum": 1,
+              "maximum": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "query": {
+                      "type": "string"
+                    },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WalletSearchResult"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/leaderboards/whales": {
+      "get": {
+        "tags": [
+          "Leaderboards"
+        ],
+        "operationId": "getWhaleLeaderboard",
+        "summary": "Whale leaderboard",
+        "description": "**Min tier: `free`.** Top wallets by ClickHouse-rollup-backed metrics. `free` keys see the top 25 only; `terminal`+ paginate to depth 500. Cursor-paginated.",
+        "parameters": [
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "Sort key.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "volume",
+                "winRate",
+                "zScore",
+                "totalBets"
+              ],
+              "default": "volume"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size (default 50, max 100).",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "min_volume",
+            "in": "query",
+            "description": "Minimum total volume (USD) filter.",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "min_resolved_bets",
+            "in": "query",
+            "description": "Minimum resolved-bet count filter.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/LeaderboardPage"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/leaderboards/pnl": {
+      "get": {
+        "tags": [
+          "Leaderboards"
+        ],
+        "operationId": "getPnlLeaderboard",
+        "summary": "PnL leaderboard",
+        "description": "**Min tier: `free`.** Wallets ranked by accounting-grade PnL, routed per wallet class (see `pnl_source`): Polymarket's own figure when available, the on-chain cash ledger for retail wallets, and null/0 (`pnl_source: none`) for market-maker/whale wallets pending refresh. `free` keys see the top 25; `terminal`+ paginate to depth 500. Cursor-paginated.",
+        "parameters": [
+          {
+            "name": "sort_dir",
+            "in": "query",
+            "description": "Sort direction.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "desc"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size (default 50, max 100).",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "min_resolved_bets",
+            "in": "query",
+            "description": "Minimum resolved bets (default 5).",
+            "schema": {
+              "type": "integer",
+              "default": 5,
+              "minimum": 0
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/LeaderboardPage"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/leaderboards/category/{cat}": {
+      "get": {
+        "tags": [
+          "Leaderboards"
+        ],
+        "operationId": "getCategoryLeaderboard",
+        "summary": "Category leaderboard",
+        "description": "**Min tier: `free`.** Top wallets within a market category. `free` keys see the top 25; `terminal`+ paginate to depth 500. Cursor-paginated.",
+        "parameters": [
+          {
+            "name": "cat",
+            "in": "path",
+            "required": true,
+            "description": "Category slug.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "politics",
+                "crypto",
+                "sports",
+                "culture",
+                "economics",
+                "breaking-news"
+              ]
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "Sort key.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "win_rate",
+                "counter_consensus_wins",
+                "pnl",
+                "volume"
+              ],
+              "default": "pnl"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size (default 50, max 100).",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "min_bets",
+            "in": "query",
+            "description": "Minimum bets in the category (default 20).",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/LeaderboardPage"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/cohorts": {
+      "get": {
+        "tags": [
+          "Cohorts"
+        ],
+        "operationId": "listCohorts",
+        "summary": "List curated cohorts",
+        "description": "**Min tier: `free` (any valid key).** The cohort registry — every curated wallet cohort with its exact membership floor, default ranking, accepted sort keys and pagination depth cap. Hits no database, so it is the cheap discovery call to make before spending a `terminal` call on `/v1/cohorts/{slug}`.\n\nA cohort is not a saved list: membership is recomputed on read from the pre-aggregated wallet rollups, so a wallet that stops clearing the floor leaves the cohort. Ranking is PnL-first — `pnl` is Polymarket's own reported figure when present, else CrowdIntel's on-chain ledger figure.\n\nSeven cohorts are currently enabled (`profit-leaders`, `six-figure-club`, `deep-sample-winners`, `high-confidence-sharps`, `whale-class`, `fresh-faces-90d`, `market-maker-bots`). The six category cohorts (`best-sports-traders`, `best-politics-traders`, `best-crypto-traders`, `best-economics-traders`, `best-culture-traders`, `best-breaking-news-traders`) are returned WITH `enabled: false` and a public `disabled_reason` rather than hidden — requesting one from `/v1/cohorts/{slug}` returns `400 bad_request` quoting that reason. Code against `enabled`, not against a hardcoded slug list.\n\nNote: unrelated to the `cohort` field on `/v1/status/parity`, which names a parity **sampling** cohort (`random` | `top`), not a curated wallet cohort.\n\nTakes no parameters and is not paginated: `next_cursor` is always `null`.",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/CohortRegistryPage"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/v1/cohorts/{slug}": {
+      "get": {
+        "tags": [
+          "Cohorts"
+        ],
+        "operationId": "getCohortMembers",
+        "summary": "Cohort members",
+        "description": "**Min tier: `free`.** The ranked members of one curated cohort. Every row satisfies every line of the cohort's floor, so the page needs no further filtering. `free` keys see the top 25 with no pagination; `terminal`+ paginate to the cohort's own `max_rows` cap (500 for every cohort today). Cursor-paginated.\n\nReads the pre-aggregated wallet rollups only — never a raw `trades` scan. Those aggregates lag real time, so the response reports `data_as_of` (the freshest underlying rollup timestamp across the page, `null` on an empty page) instead of implying \"now\". `member_count` is how many wallets clear the cohort's own floor in total; it is unaffected by `min_bets` and by paging.\n\nRanking is PnL-first: `pnl` is Polymarket's reported figure when present, else the on-chain ledger's. `sort=win_rate` ranks on the sample-shrunk `bayesian_win_rate` — the raw per-fill `win_rate` column is contaminated and is never a sort key or a floor. No cohort gates on win rate.\n\nErrors are loud rather than silent: an unknown slug returns `400 bad_request` listing the valid slugs (not `404`); a disabled cohort returns `400 bad_request` quoting its `disabled_reason` (not a `200` with an empty page); a `cursor` past `max_rows` returns `400 bad_request` naming the cap.",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "description": "Cohort slug from `/v1/cohorts`. Slugs are stable and never renamed; the enabled set and the floors are not.",
+            "schema": {
+              "type": "string",
+              "example": "deep-sample-winners"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "Sort key. Defaults to the cohort's own `order_by` (`pnl` for every cohort except `market-maker-bots`, which ranks by `volume`). Must appear in that cohort's `sortable` list or the request is rejected with `400`. `win_rate` ranks on the sample-shrunk `bayesian_win_rate`.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pnl",
+                "volume",
+                "resolved_bets",
+                "win_rate"
+              ]
+            }
+          },
+          {
+            "name": "sort_dir",
+            "in": "query",
+            "description": "Sort direction.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "desc"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size (default 50, max 100). `free` keys are capped at 25.",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "min_bets",
+            "in": "query",
+            "description": "Raise the resolved-bet floor above the cohort's own. It can only RAISE it — a value below `floors.min_resolved_bets` is clamped up. It narrows the returned page, not `member_count`.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/CohortMemberPage"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/v1/markets": {
+      "get": {
+        "tags": [
+          "Markets"
+        ],
+        "operationId": "listMarkets",
+        "summary": "List, search and filter the market catalog",
+        "description": "**Min tier: `free`.** Enumerate the market catalog (~2.1M markets). Keyset-paginated on `condition_id`; page size scales with plan (25 free / 100 terminal / 250 terminal_pro).\n\n`q` is a case-insensitive substring match on the market title and requires at least 2 characters. `category` takes a canonical slug (`politics`, `crypto`, `sports`, `culture`, `economics`, `tech`, `science`, `geopolitics`, `breaking-news`) and is expanded to the underlying stored variants for you.\n\nA market's open/closed status is deliberately not returned or filterable here — that field is unreliable on a share of rows, and filtering on a wrong status is worse than not offering it. Use `/v1/markets/{slug}` for a single market's detail.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Title substring, min 3 characters (pg_trgm trigram size). Results are relevance-ordered and capped at the first 200 matches.",
+            "schema": {
+              "type": "string",
+              "minLength": 3
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "description": "Canonical category slug.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size (default 25; max 25 free / 100 terminal / 250 terminal_pro).",
+            "schema": {
+              "type": "integer",
+              "default": 25,
+              "minimum": 1,
+              "maximum": 250
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of catalog entries.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketListPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/markets/{slug}": {
+      "get": {
+        "tags": [
+          "Markets"
+        ],
+        "operationId": "getMarket",
+        "summary": "Market detail",
+        "description": "**Min tier: `free`.** Market detail — aggregate stats, top YES/NO holders, recent price history, and resolution outcome.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SlugPath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Market detail.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/markets/{slug}/sentiment": {
+      "get": {
+        "tags": [
+          "Markets"
+        ],
+        "operationId": "getMarketSentiment",
+        "summary": "Market sentiment + implied probability",
+        "description": "**Min tier: `free`.** Whale YES/NO sentiment and whale-implied probability over a 30-day window (whale/insider wallets only, Bayesian-WR-weighted).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SlugPath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Market sentiment.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Sentiment"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "implied_probability": {
+                          "$ref": "#/components/schemas/ImpliedProbability"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/markets/{slug}/flow": {
+      "get": {
+        "tags": [
+          "Markets"
+        ],
+        "operationId": "getMarketFlow",
+        "summary": "Market order flow",
+        "description": "**Min tier: `free`.** Recent order flow — time-bucketed YES/NO buy/sell volume, net flow, unique wallets, and average price. Timestamp-bounded read (never an unfiltered trades scan).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SlugPath"
+          },
+          {
+            "name": "minutes",
+            "in": "query",
+            "description": "Look-back window in minutes (default 60, range 5-1440).",
+            "schema": {
+              "type": "integer",
+              "default": 60,
+              "minimum": 5,
+              "maximum": 1440
+            }
+          },
+          {
+            "name": "whales_only",
+            "in": "query",
+            "description": "Restrict to wallets with >$50k total volume (default true).",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Order flow.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketFlow"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/markets/{slug}/candles": {
+      "get": {
+        "tags": [
+          "Markets"
+        ],
+        "operationId": "getMarketCandles",
+        "summary": "Market OHLCV candles (full history)",
+        "description": "**Min tier: `free`.** True OHLCV price history for a market, at 1m-1d resolution, over its full lifetime — no retention window and no row cap beyond cursor paging. Served from a ClickHouse 1-minute rollup, so `open`/`close` are the bucket's real first and last trade rather than an average.\n\nThe `{slug}` path segment also accepts a raw `condition_id` (`0x` + 64 hex). Some markets have on-chain history but no catalog entry, and a raw `condition_id` is the only way to address those.\n\nEach bucket carries a `quality` field. `degraded` means the underlying fills for that window cannot be attributed to an outcome (Feb-Apr 2026), so volume is understated there; price is unaffected.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SlugPath"
+          },
+          {
+            "name": "interval",
+            "in": "query",
+            "description": "Bucket width.",
+            "schema": {
+              "type": "string",
+              "default": "1h",
+              "enum": [
+                "1m",
+                "5m",
+                "15m",
+                "30m",
+                "1h",
+                "4h",
+                "1d"
+              ]
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Inclusive lower bound, ISO-8601 or unix-ms.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Exclusive upper bound, ISO-8601 or unix-ms.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "token_id",
+            "in": "query",
+            "description": "Outcome token to chart. Defaults to the market's busiest token.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Buckets per page (default 500, max 1000).",
+            "schema": {
+              "type": "integer",
+              "default": 500,
+              "minimum": 1,
+              "maximum": 1000
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OHLCV buckets, oldest first.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketCandlePage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/markets/{slug}/twap": {
+      "get": {
+        "tags": [
+          "Markets"
+        ],
+        "operationId": "getMarketTwapWindow",
+        "summary": "Settlement window for a crypto up/down market",
+        "description": "**Min tier: `free`.** Every Chainlink observation across the window that settles this market, plus their mean and an explicit `coverage` verdict.\n\n`window` is your input, not something derived from the market. Polymarket uses 30 seconds for 5-minute markets and 60 for 15-minute ones, but `start_date` is null or wrong on all but a handful of catalog rows, so the market cannot say which kind it is. Inferring it would silently return the wrong window for half the surface; the default is 30 and the response always echoes what was used.\n\nThe `{slug}` segment also accepts a raw `condition_id`, though symbol resolution reads the slug, so a `condition_id` only works for markets that have a catalog row.\n\nEquity and index up/down markets (`aapl-`, `spx-`) return `404`: they settle on Pyth feeds that are not recorded here.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SlugPath"
+          },
+          {
+            "name": "window",
+            "in": "query",
+            "description": "Settlement window in seconds. 30 for 5-minute markets, 60 for 15-minute.",
+            "schema": {
+              "type": "integer",
+              "default": 30,
+              "enum": [
+                30,
+                60
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observations across the settlement window, oldest first.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketTwapWindowPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/markets/trending": {
+      "get": {
+        "tags": [
+          "Markets"
+        ],
+        "operationId": "getTrendingMarkets",
+        "summary": "Trending markets",
+        "description": "**Min tier: `free`.** Markets ranked by whale volume over a recent window. Cursor-paginated; time-bounded aggregate.",
+        "parameters": [
+          {
+            "name": "period_hours",
+            "in": "query",
+            "description": "Look-back window in hours (default 24, range 1-168).",
+            "schema": {
+              "type": "integer",
+              "default": 24,
+              "minimum": 1,
+              "maximum": 168
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size (default 20, max 100).",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/CategoryFilter"
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Title substring filter.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/MarketRankPage"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/markets/moving": {
+      "get": {
+        "tags": [
+          "Markets"
+        ],
+        "operationId": "getMovingMarkets",
+        "summary": "Moving markets",
+        "description": "**Min tier: `free`.** Markets ranked by absolute price change over a recent window (requires >= 3 trades per market). Cursor-paginated.",
+        "parameters": [
+          {
+            "name": "period_hours",
+            "in": "query",
+            "description": "Look-back window in hours (default 24, range 1-168).",
+            "schema": {
+              "type": "integer",
+              "default": 24,
+              "minimum": 1,
+              "maximum": 168
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size (default 20, max 100).",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/CategoryFilter"
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Title substring filter.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/MarketRankPage"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/crypto/twap": {
+      "get": {
+        "tags": [
+          "Crypto"
+        ],
+        "operationId": "getCryptoTwap",
+        "summary": "Chainlink TWAP series (crypto settlement price)",
+        "description": "**Min tier: `free`.** The Chainlink observations Polymarket settles crypto up/down markets against, oldest first, cursor-paged.\n\nA 5-minute market settles on the 30-second TWAP; a 15-minute market on the 60-second one. `window=0` is the Chainlink spot reference carried alongside, which is what makes divergence between spot and settlement measurable.\n\nEight symbols publish — `btc`, `eth`, `sol`, `xrp`, `bnb`, `doge`, `zec`, `hype` (all `/usd`) — at about one observation per second each.\n\n**Settle on `value_e18`, not `value`.** `value_e18` is the exact E18 fixed-point integer; `value` is a float and is lossy above 2^53.\n\nSupplying `symbol` makes the read index-bounded. Omitting it scans every symbol over the range, which is why `limit` is capped at 5000.",
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "description": "Feed symbol. See `/v1/crypto/twap/coverage` for the live list.",
+            "schema": {
+              "type": "string",
+              "example": "btc/usd"
+            }
+          },
+          {
+            "name": "window",
+            "in": "query",
+            "description": "TWAP window in seconds. Omit for all three.",
+            "schema": {
+              "type": "integer",
+              "enum": [
+                0,
+                30,
+                60
+              ]
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Inclusive lower bound, ISO-8601 or unix-ms.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Exclusive upper bound, ISO-8601 or unix-ms.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Observations per page (default 1000, max 5000).",
+            "schema": {
+              "type": "integer",
+              "default": 1000,
+              "minimum": 1,
+              "maximum": 5000
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observations, oldest first.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CryptoTwapPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/crypto/twap/coverage": {
+      "get": {
+        "tags": [
+          "Crypto"
+        ],
+        "operationId": "getCryptoTwapCoverage",
+        "summary": "What TWAP history is held",
+        "description": "**Min tier: `free`.** One row per symbol and window with the observation count and the first and last observation held.\n\nThis endpoint exists because the series has a hard start. The upstream feed publishes live and offers no history, so coverage begins when recording started and nothing earlier can ever be filled in. Read `first_ts` before treating an empty page as \"nothing happened\" — the two are otherwise indistinguishable.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Coverage per symbol and window.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CryptoTwapCoveragePage"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/analyze/market/{slug}": {
+      "get": {
+        "tags": [
+          "Analyze"
+        ],
+        "operationId": "analyzeMarket",
+        "summary": "On-demand market analysis",
+        "description": "**Min tier: `free`.** Live-computed structured intelligence object for a market: smart-money probability, market price, divergence, top positions, sentiment, and 24h flow. Deterministic (no LLM). Cached ~30s.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SlugPath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Market analysis object.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketAnalysis"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/clusters/sybil": {
+      "get": {
+        "tags": [
+          "Clusters"
+        ],
+        "operationId": "getSybilClusters",
+        "summary": "Sybil clusters",
+        "description": "**Min tier: `free`.** Pre-computed sybil-cluster rollup (no on-demand graph build).",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Max clusters (default 100, max 200).",
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "Sort key.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "members",
+                "volume",
+                "pnl"
+              ],
+              "default": "members"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sybil clusters.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "clusters": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SybilCluster"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/clusters/by-id/{id}": {
+      "get": {
+        "tags": [
+          "Clusters"
+        ],
+        "operationId": "getClusterById",
+        "summary": "Cluster by id",
+        "description": "**Min tier: `free`.** One persistent funding cluster by its stable id (`clu_0x<40 hex>`): the pre-aggregated `cluster_stats` row plus the member list (wallet + role), capped at 500 members. Reads the worker-maintained read-model; it never recomputes a graph on the request path.\n\n**Route note:** this lives at `/clusters/by-id/{id}`, not `/clusters/{id}` — the sibling dynamic segment at `/clusters` is `{funder}` (the funder-graph route), and two different path-parameter names cannot share a route level.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClusterIdPath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cluster detail.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClusterDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/clusters/{funder}/graph": {
+      "get": {
+        "tags": [
+          "Clusters"
+        ],
+        "operationId": "getClusterGraph",
+        "summary": "Funding-cluster graph",
+        "description": "**Min tier: `free`.** Funding-cluster graph rooted at a funder address: proxy nodes funded by it plus their stats. Hard node cap of 500 — the Polymarket proxy factory and any funder with >= 500 proxies are rejected with `400` (graph blowup guard).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FunderPath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cluster graph.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClusterGraph"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/investigations": {
+      "get": {
+        "tags": [
+          "Investigations"
+        ],
+        "operationId": "listInvestigations",
+        "summary": "List investigations",
+        "description": "**Min tier: `free`.** Curated coordinated-wallet investigations, ordered by p-value ascending then recency. Cursor-paginated.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size (default 20, max 100).",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "$ref": "#/components/parameters/CategoryFilter"
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Investigation type filter.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Investigations page.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/InvestigationSummary"
+                      }
+                    },
+                    "next_cursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/investigations/{id}": {
+      "get": {
+        "tags": [
+          "Investigations"
+        ],
+        "operationId": "getInvestigation",
+        "summary": "Get investigation",
+        "description": "**Min tier: `free`.** Full investigation by numeric id — wallets, evidence, and statistical summary.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Investigation id.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Investigation.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Investigation"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/trades": {
+      "get": {
+        "tags": [
+          "Trades"
+        ],
+        "operationId": "listTrades",
+        "summary": "Query trade fills",
+        "description": "**Min tier: `free`.** Raw on-chain trade fills. **At least one selective filter (`wallet`, `market`, or a fully-bounded `start`+`end` window) is required** — unfiltered scans of the 1.3B-row trades table are rejected with `400`. Time windows must supply both `start` and `end` and cannot exceed 90 days. Keyset cursor pagination on `(trade_timestamp, id)`; routes to ClickHouse for heavy reads.",
+        "parameters": [
+          {
+            "name": "wallet",
+            "in": "query",
+            "description": "Filter by proxy wallet address.",
+            "schema": {
+              "$ref": "#/components/schemas/Address"
+            }
+          },
+          {
+            "name": "market",
+            "in": "query",
+            "description": "Filter by market condition id.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "side",
+            "in": "query",
+            "description": "Trade side.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "BUY",
+                "SELL"
+              ]
+            }
+          },
+          {
+            "name": "min_bet",
+            "in": "query",
+            "description": "Minimum bet value (USD).",
+            "schema": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "start",
+            "in": "query",
+            "description": "Window start — ISO-8601 or unix-ms. Required with `end` when no wallet/market filter.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "end",
+            "in": "query",
+            "description": "Window end — ISO-8601 or unix-ms. Window capped at 90 days.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size (default 25, max 100).",
+            "schema": {
+              "type": "integer",
+              "default": 25,
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/TradePage"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/trades/{txHash}": {
+      "get": {
+        "tags": [
+          "Trades"
+        ],
+        "operationId": "getTrade",
+        "summary": "Get trade by tx hash",
+        "description": "**Min tier: `free`.** Single trade fill by transaction hash (Postgres point lookup).",
+        "parameters": [
+          {
+            "name": "txHash",
+            "in": "path",
+            "required": true,
+            "description": "Transaction hash.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trade fill.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Trade"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/backtest/run": {
+      "post": {
+        "tags": [
+          "Backtest"
+        ],
+        "operationId": "runBacktest",
+        "summary": "Enqueue a backtest job",
+        "description": "**Min tier: `free`.** Replays historical whale/insider signals through a stake rule and returns immediately with a job id — the simulation runs on a worker queue. Poll `GET /v1/backtest/{job_id}` until `status` is `done` or `error`.\n\nThe body is validated with a strict schema: unknown fields are rejected with `400 bad_request` (the message names the offending path). A request with no body, or a body that is not valid JSON, is also `400`.\n\nGuardrails:\n- **Per-key concurrency:** at most 3 `queued`+`running` jobs per API key. Exceeding it returns `429` with code `rate_limited` — the same code and the same `X-RateLimit-*`/`Retry-After` headers as a quota 429, even though the correct response is to poll your existing jobs rather than sleep for the quota window.\n- **Global back-pressure:** `503` (code `internal_error`, no `Retry-After`) when 50 jobs are already queued.\n- **Window cap:** `period.to - period.from` may not exceed 1,095 days (3 years).\n\nThere is no `Idempotency-Key` support: a retried POST enqueues a second job and consumes another concurrency slot.",
+        "requestBody": {
+          "required": true,
+          "description": "Must be valid JSON. `{}` is accepted and simulates every signal with the documented defaults.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BacktestRunRequest"
+              },
+              "example": {
+                "signal": "insider",
+                "filters": {
+                  "min_score": 70,
+                  "category": "politics"
+                },
+                "period": {
+                  "from": "2025-01-01",
+                  "to": "2026-01-01"
+                },
+                "stake_rule": {
+                  "kind": "flat",
+                  "size": 100
+                },
+                "fees": {
+                  "fee_bps": 200,
+                  "slippage_bps": 0
+                },
+                "initial_capital": 10000
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Job accepted and queued.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BacktestJobAccepted"
+                },
+                "example": {
+                  "job_id": 412,
+                  "status": "queued",
+                  "poll": "/api/v1/backtest/412"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/QueueSaturated"
+          }
+        }
+      }
+    },
+    "/v1/backtest/{job_id}": {
+      "get": {
+        "tags": [
+          "Backtest"
+        ],
+        "operationId": "getBacktestJob",
+        "summary": "Poll a backtest job",
+        "description": "**Min tier: `free`.** Returns the job's current `status` (`queued` → `running` → `done` | `error`), the validated params it was enqueued with, and — once `done` — the full `result` (summary metrics, equity curve, per-trade rows, documented assumptions).\n\nOwnership is enforced against the Clerk user that owns the presenting key. A job id belonging to another account returns `404`, not `403`, so the endpoint never confirms that an id exists.",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "description": "Job id returned by `POST /v1/backtest/run`. Must be a positive integer.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Job state (plus `result` when finished).",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BacktestJob"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/webhooks": {
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "operationId": "createWebhook",
+        "summary": "Register a webhook subscription",
+        "description": "**Min tier: `free`.** Registers an HTTPS callback that the dispatcher POSTs on every new whale/insider signal matching the filters, signed with an `X-CrowdIntel-Signature` HMAC header and retried on failure.\n\nThe `secret` is returned **once**, in this response only — `GET /v1/webhooks` always reports `secret: null`. There is no `PATCH`: changing a subscription means delete + recreate, which rotates the secret.\n\nValidation (all rejected with `400 bad_request`):\n- `callback_url` must be an absolute `https:` URL with a publicly routable host — `localhost`, `*.local`, `*.internal`, `0.0.0.0` and private/loopback/link-local IP literals are refused (SSRF guard). The host is re-resolved and re-checked at delivery time, so a DNS-rebinding target registers but never fires.\n- Filter fields are top-level, not nested.\n- Exceeding the cap of 10 subscriptions per account returns `400` (not `409`/`429`).\n\nUnrecognised body fields are ignored.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookCreateRequest"
+              },
+              "example": {
+                "callback_url": "https://example.com/hooks/crowdintel",
+                "min_score": 70,
+                "score_type": "insider",
+                "category": "politics"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Subscription created. `secret` is shown here and never again.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Webhooks"
+        ],
+        "operationId": "listWebhooks",
+        "summary": "List webhook subscriptions",
+        "description": "**Min tier: `free`.** Every subscription owned by the caller's account, newest first, with `secret` redacted to `null`.\n\nThis collection is **not** cursor-paginated and does not use the `{ data, next_cursor }` envelope — it returns `{ \"webhooks\": [...] }`, bounded by the 10-per-account cap.",
+        "responses": {
+          "200": {
+            "description": "The caller's subscriptions (secrets redacted).",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "webhooks": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Webhook"
+                      }
+                    }
+                  },
+                  "required": [
+                    "webhooks"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/webhooks/{id}": {
+      "delete": {
+        "tags": [
+          "Webhooks"
+        ],
+        "operationId": "deleteWebhook",
+        "summary": "Delete a webhook subscription",
+        "description": "**Min tier: `free`.** Removes one of the caller's subscriptions and drops its queued/sent deliveries. An id that does not exist — or belongs to another account — returns `404`.\n\nReturns `200` with a body, not `204`.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Subscription id from `POST`/`GET /v1/webhooks`. Must be a positive integer.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Subscription deleted.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer"
+                    },
+                    "deleted": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "deleted"
+                  ]
+                },
+                "example": {
+                  "id": 7,
+                  "deleted": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/v1/status/parity": {
+      "get": {
+        "tags": [
+          "Status"
+        ],
+        "operationId": "getParityStatus",
+        "summary": "Nightly PnL parity scores",
+        "description": "**Min tier: `free` (any valid key).** Data-quality transparency: the last 30 days of nightly parity runs, newest first. Each run samples wallets and compares the PnL CrowdIntel computes against Polymarket's own profit API, emitting one row per cohort (`random` | `top`) × mode (`raw` | `routed`).\n\nTakes no parameters — the window is fixed at 30 days and the full set of runs is returned uncursored.",
+        "responses": {
+          "200": {
+            "description": "Parity scores plus a plain-language explanation of the fields.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/XRateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/XRateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/XRateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParityStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "cint_api_*",
+        "description": "Bearer API key. Format: `cint_api_` followed by 48 hex chars. Mint at /settings/api (Terminal $99+)."
+      }
+    },
+    "headers": {
+      "XRateLimitLimit": {
+        "description": "Call cap of the binding (hourly or monthly) rate-limit window.",
+        "required": true,
+        "schema": {
+          "type": "integer"
+        }
+      },
+      "XRateLimitRemaining": {
+        "description": "Calls left in the binding window.",
+        "required": true,
+        "schema": {
+          "type": "integer"
+        }
+      },
+      "XRateLimitReset": {
+        "description": "Unix epoch seconds at which the binding window frees a slot (the oldest counted call ages out).",
+        "required": true,
+        "schema": {
+          "type": "integer"
+        }
+      }
+    },
+    "parameters": {
+      "AddressPath": {
+        "name": "address",
+        "in": "path",
+        "required": true,
+        "description": "0x-prefixed 40-hex Polygon wallet address.",
+        "schema": {
+          "$ref": "#/components/schemas/Address"
+        }
+      },
+      "SlugPath": {
+        "name": "slug",
+        "in": "path",
+        "required": true,
+        "description": "Polymarket market slug.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "FunderPath": {
+        "name": "funder",
+        "in": "path",
+        "required": true,
+        "description": "0x-prefixed 40-hex funder address.",
+        "schema": {
+          "$ref": "#/components/schemas/Address"
+        }
+      },
+      "ClusterIdPath": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "Persistent funding-cluster id, of the form `clu_0x<40 hex>` (the cluster's shortest member address).",
+        "schema": {
+          "type": "string",
+          "pattern": "^clu_0x[0-9a-f]{40}$",
+          "example": "clu_0x00493aa44bcfd6f0c2ecc7f8b154e4fb352d1c81"
+        }
+      },
+      "Cursor": {
+        "name": "cursor",
+        "in": "query",
+        "description": "Opaque pagination cursor from a previous response's `next_cursor`. Omit for the first page. A cursor that is supplied but undecodable returns `400 bad_request` (\"Invalid cursor\") — it does not silently restart at page 1.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "CategoryFilter": {
+        "name": "category",
+        "in": "query",
+        "description": "Filter by market category.",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Malformed parameters or a rejected guardrail (e.g. unfiltered trades query, cluster blowup, window > 90 days).",
+        "headers": {
+          "X-RateLimit-Limit": {
+            "$ref": "#/components/headers/XRateLimitLimit"
+          },
+          "X-RateLimit-Remaining": {
+            "$ref": "#/components/headers/XRateLimitRemaining"
+          },
+          "X-RateLimit-Reset": {
+            "$ref": "#/components/headers/XRateLimitReset"
+          },
+          "X-Request-Id": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "bad_request",
+                "message": "Invalid wallet address",
+                "request_id": "5f8e..."
+              }
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Missing, invalid, or revoked API key. Returned before the rate limiter runs, so it carries no `X-RateLimit-*` headers.",
+        "headers": {
+          "X-Request-Id": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "unauthorized",
+                "message": "Missing Authorization: Bearer token",
+                "request_id": "5f8e..."
+              }
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Key valid but its tier is below this endpoint's minimum. Returned before the rate limiter runs, so it carries no `X-RateLimit-*` headers.",
+        "headers": {
+          "X-Request-Id": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "forbidden",
+                "message": "This endpoint requires the terminal_pro API tier",
+                "request_id": "5f8e..."
+              }
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "The requested resource was not found.",
+        "headers": {
+          "X-RateLimit-Limit": {
+            "$ref": "#/components/headers/XRateLimitLimit"
+          },
+          "X-RateLimit-Remaining": {
+            "$ref": "#/components/headers/XRateLimitRemaining"
+          },
+          "X-RateLimit-Reset": {
+            "$ref": "#/components/headers/XRateLimitReset"
+          },
+          "X-Request-Id": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "not_found",
+                "message": "Wallet not found",
+                "request_id": "5f8e..."
+              }
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "Hourly or monthly rate limit exceeded.",
+        "headers": {
+          "X-RateLimit-Limit": {
+            "$ref": "#/components/headers/XRateLimitLimit"
+          },
+          "X-RateLimit-Remaining": {
+            "$ref": "#/components/headers/XRateLimitRemaining"
+          },
+          "X-RateLimit-Reset": {
+            "$ref": "#/components/headers/XRateLimitReset"
+          },
+          "Retry-After": {
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Seconds until the binding window frees a slot.",
+            "required": true
+          },
+          "X-Request-Id": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "rate_limited",
+                "message": "Rate limit exceeded",
+                "request_id": "5f8e..."
+              }
+            }
+          }
+        }
+      },
+      "WalletEdgePage": {
+        "description": "Cursor-paginated edge-screen results.",
+        "headers": {
+          "X-RateLimit-Limit": {
+            "$ref": "#/components/headers/XRateLimitLimit"
+          },
+          "X-RateLimit-Remaining": {
+            "$ref": "#/components/headers/XRateLimitRemaining"
+          },
+          "X-RateLimit-Reset": {
+            "$ref": "#/components/headers/XRateLimitReset"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WalletEdge"
+                  }
+                },
+                "next_cursor": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "TradePage": {
+        "description": "Cursor-paginated trade fills.",
+        "headers": {
+          "X-RateLimit-Limit": {
+            "$ref": "#/components/headers/XRateLimitLimit"
+          },
+          "X-RateLimit-Remaining": {
+            "$ref": "#/components/headers/XRateLimitRemaining"
+          },
+          "X-RateLimit-Reset": {
+            "$ref": "#/components/headers/XRateLimitReset"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Trade"
+                  }
+                },
+                "next_cursor": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "LeaderboardPage": {
+        "description": "Cursor-paginated leaderboard rows.",
+        "headers": {
+          "X-RateLimit-Limit": {
+            "$ref": "#/components/headers/XRateLimitLimit"
+          },
+          "X-RateLimit-Remaining": {
+            "$ref": "#/components/headers/XRateLimitRemaining"
+          },
+          "X-RateLimit-Reset": {
+            "$ref": "#/components/headers/XRateLimitReset"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LeaderboardEntry"
+                  }
+                },
+                "next_cursor": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "CohortRegistryPage": {
+        "description": "The full cohort registry, enabled and disabled entries alike. Not paginated — `next_cursor` is always `null`.",
+        "headers": {
+          "X-RateLimit-Limit": {
+            "$ref": "#/components/headers/XRateLimitLimit"
+          },
+          "X-RateLimit-Remaining": {
+            "$ref": "#/components/headers/XRateLimitRemaining"
+          },
+          "X-RateLimit-Reset": {
+            "$ref": "#/components/headers/XRateLimitReset"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CohortDefinition"
+                  }
+                },
+                "next_cursor": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Always `null` — the registry is returned whole."
+                }
+              }
+            }
+          }
+        }
+      },
+      "CohortMemberPage": {
+        "description": "Cursor-paginated cohort members, with the cohort's own context as siblings of `data`.",
+        "headers": {
+          "X-RateLimit-Limit": {
+            "$ref": "#/components/headers/XRateLimitLimit"
+          },
+          "X-RateLimit-Remaining": {
+            "$ref": "#/components/headers/XRateLimitRemaining"
+          },
+          "X-RateLimit-Reset": {
+            "$ref": "#/components/headers/XRateLimitReset"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "slug": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "thesis": {
+                  "type": "string",
+                  "description": "One sentence saying what this cohort selects for."
+                },
+                "member_count": {
+                  "type": "integer",
+                  "description": "Wallets currently clearing the cohort's own floor. Unaffected by `min_bets`, `limit` or paging. Membership drifts as the rollups are rewritten — treat it as approximate, not a guarantee."
+                },
+                "data_as_of": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time",
+                  "description": "Freshest underlying rollup timestamp across the returned page; `null` on an empty page. These aggregates lag real time — never present them as live."
+                },
+                "floor_lines": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "The cohort's floor rendered as public copy, derived from the same object the query enforces (e.g. `\"≥ 500 resolved bets\"`, `\"positive PnL\"`). Display these strings rather than retyping a threshold."
+                },
+                "sort": {
+                  "type": "string",
+                  "enum": [
+                    "pnl",
+                    "volume",
+                    "resolved_bets",
+                    "win_rate"
+                  ],
+                  "description": "Sort key actually applied."
+                },
+                "sort_dir": {
+                  "type": "string",
+                  "enum": [
+                    "asc",
+                    "desc"
+                  ]
+                },
+                "min_bets": {
+                  "type": "integer",
+                  "description": "Resolved-bet floor actually applied, after clamping the request up to the cohort's own floor."
+                },
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CohortMember"
+                  }
+                },
+                "next_cursor": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "`null` on the last page, when the cohort's `max_rows` cap is reached, and always for `free` keys."
+                }
+              }
+            }
+          }
+        }
+      },
+      "QueueSaturated": {
+        "description": "The global backtest queue is full (50 queued jobs). Note the code is `internal_error`, not a dedicated one, and no `Retry-After` is sent.",
+        "headers": {
+          "X-RateLimit-Limit": {
+            "$ref": "#/components/headers/XRateLimitLimit"
+          },
+          "X-RateLimit-Remaining": {
+            "$ref": "#/components/headers/XRateLimitRemaining"
+          },
+          "X-RateLimit-Reset": {
+            "$ref": "#/components/headers/XRateLimitReset"
+          },
+          "X-Request-Id": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "internal_error",
+                "message": "Backtest queue is saturated; retry shortly.",
+                "request_id": "5f8e..."
+              }
+            }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "Unhandled server error. The wrapper logs the detail server-side keyed by `request_id` and returns a generic message.",
+        "headers": {
+          "X-RateLimit-Limit": {
+            "$ref": "#/components/headers/XRateLimitLimit"
+          },
+          "X-RateLimit-Remaining": {
+            "$ref": "#/components/headers/XRateLimitRemaining"
+          },
+          "X-RateLimit-Reset": {
+            "$ref": "#/components/headers/XRateLimitReset"
+          },
+          "X-Request-Id": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "internal_error",
+                "message": "Internal error",
+                "request_id": "5f8e..."
+              }
+            }
+          }
+        }
+      },
+      "MarketRankPage": {
+        "description": "Cursor-paginated ranked markets.",
+        "headers": {
+          "X-RateLimit-Limit": {
+            "$ref": "#/components/headers/XRateLimitLimit"
+          },
+          "X-RateLimit-Remaining": {
+            "$ref": "#/components/headers/XRateLimitRemaining"
+          },
+          "X-RateLimit-Reset": {
+            "$ref": "#/components/headers/XRateLimitReset"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MarketRank"
+                  }
+                },
+                "next_cursor": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "ApiTier": {
+        "type": "string",
+        "enum": [
+          "free",
+          "terminal",
+          "terminal_pro"
+        ],
+        "description": "Tier a key resolves to, derived from the owner's subscription. Every endpoint answers on every tier; the tier sets the rate limit and the webhook/backtest allowances."
+      },
+      "BacktestRunRequest": {
+        "type": "object",
+        "description": "Backtest parameters. Every field is optional; unknown fields are rejected with 400.",
+        "additionalProperties": false,
+        "properties": {
+          "signal": {
+            "type": "string",
+            "enum": [
+              "whale",
+              "insider",
+              "all"
+            ],
+            "default": "all",
+            "description": "Which detector's signals to replay. `all` = whale ∪ insider."
+          },
+          "filters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "min_score": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100
+              },
+              "max_score": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100
+              },
+              "category": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "min_odds": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "Minimum entry odds (share price 0-1)."
+              },
+              "max_odds": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "min_bet_value": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Minimum USD value of the originating fill."
+              }
+            }
+          },
+          "period": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Resolution-date window. Span capped at 1,095 days; `from` must be on or before `to`.",
+            "properties": {
+              "from": {
+                "type": "string",
+                "description": "ISO-8601 date (`2025-01-01`) or date-time with offset."
+              },
+              "to": {
+                "type": "string",
+                "description": "ISO-8601 date or date-time with offset."
+              }
+            }
+          },
+          "stake_rule": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "flat",
+                  "fractional"
+                ],
+                "default": "flat"
+              },
+              "size": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1000000,
+                "description": "flat: USD per signal. Default 100."
+              },
+              "fraction": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1,
+                "description": "fractional: fraction of current equity per signal. Default 0.05."
+              },
+              "max_fraction": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1,
+                "description": "fractional: hard cap on fraction. Default 0.1."
+              },
+              "scale_by_score": {
+                "type": "boolean",
+                "description": "Scale stake linearly by signal score (0.5x at 50 → 1.5x at 100). Default false."
+              }
+            }
+          },
+          "fees": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "fee_bps": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 2000,
+                "description": "Entry fee on notional, basis points. Default 200 (2%)."
+              },
+              "slippage_bps": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 2000,
+                "description": "Entry-price slippage against the follower, basis points. Default 0."
+              }
+            }
+          },
+          "initial_capital": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 100000000,
+            "description": "Starting bankroll (USD) for the equity curve. Default 10000."
+          }
+        }
+      },
+      "BacktestJobAccepted": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "const": "queued"
+          },
+          "poll": {
+            "type": "string",
+            "description": "Path to poll for the result.",
+            "example": "/api/v1/backtest/412"
+          }
+        },
+        "required": [
+          "job_id",
+          "status",
+          "poll"
+        ]
+      },
+      "BacktestJob": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "error"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "params": {
+            "$ref": "#/components/schemas/BacktestRunRequest",
+            "description": "The validated params the job was enqueued with."
+          },
+          "result": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/BacktestResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null unless `status` is `done`."
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Failure message; null unless `status` is `error`."
+          }
+        },
+        "required": [
+          "job_id",
+          "status",
+          "created_at",
+          "params",
+          "result",
+          "error"
+        ]
+      },
+      "BacktestResult": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "object",
+            "properties": {
+              "roi": {
+                "type": "number",
+                "description": "Total return on initial capital (fraction)."
+              },
+              "max_drawdown": {
+                "type": "number",
+                "description": "Worst peak-to-trough on the equity curve (fraction, 0-1)."
+              },
+              "sharpe": {
+                "type": "number",
+                "description": "Per-trade Sharpe (mean/stdev of trade returns) — NOT annualized."
+              },
+              "hit_rate": {
+                "type": "number"
+              },
+              "total_trades": {
+                "type": "integer"
+              },
+              "wins": {
+                "type": "integer"
+              },
+              "losses": {
+                "type": "integer"
+              },
+              "initial_capital": {
+                "type": "number"
+              },
+              "final_equity": {
+                "type": "number"
+              },
+              "net_pnl": {
+                "type": "number"
+              },
+              "avg_return_per_trade": {
+                "type": "number"
+              }
+            }
+          },
+          "equity_curve": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "t": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "Resolution timestamp of the settling trade."
+                },
+                "equity": {
+                  "type": "number"
+                },
+                "pnl": {
+                  "type": "number"
+                }
+              }
+            }
+          },
+          "trades": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "fired_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "resolved_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "whale",
+                    "insider"
+                  ]
+                },
+                "score": {
+                  "type": "number"
+                },
+                "category": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "entry_odds": {
+                  "type": "number"
+                },
+                "stake": {
+                  "type": "number"
+                },
+                "outcome": {
+                  "type": "string",
+                  "enum": [
+                    "WIN",
+                    "LOSS"
+                  ]
+                },
+                "pnl": {
+                  "type": "number"
+                },
+                "return_pct": {
+                  "type": "number",
+                  "description": "Per-trade return on stake (pnl / stake)."
+                }
+              }
+            }
+          },
+          "assumptions": {
+            "type": "object",
+            "description": "Plain-language statement of the model each result rests on, plus the effective post-defaulting params.",
+            "properties": {
+              "signal_source": {
+                "type": "string"
+              },
+              "payout_model": {
+                "type": "string"
+              },
+              "stake_sizing": {
+                "type": "string"
+              },
+              "fee_model": {
+                "type": "string"
+              },
+              "slippage_fill": {
+                "type": "string"
+              },
+              "survivorship": {
+                "type": "string"
+              },
+              "resolution_timing": {
+                "type": "string"
+              },
+              "effective_params": {
+                "type": "object",
+                "description": "Echo of the resolved parameters actually used."
+              }
+            }
+          }
+        }
+      },
+      "WebhookCreateRequest": {
+        "type": "object",
+        "description": "Filter fields are top-level, not nested. Unrecognised fields are ignored.",
+        "properties": {
+          "callback_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Absolute https URL with a publicly routable host.",
+            "example": "https://example.com/hooks/crowdintel"
+          },
+          "min_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Only deliver signals scoring at or above this. Omit for no floor."
+          },
+          "score_type": {
+            "type": "string",
+            "enum": [
+              "whale",
+              "insider"
+            ],
+            "description": "Omit to receive both kinds."
+          },
+          "category": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Market category, compared case-insensitively. Omit for any market."
+          }
+        },
+        "required": [
+          "callback_url"
+        ]
+      },
+      "WebhookFilters": {
+        "type": "object",
+        "description": "Stored filters. An empty object matches every signal.",
+        "properties": {
+          "min_score": {
+            "type": "number"
+          },
+          "score_type": {
+            "type": "string",
+            "enum": [
+              "whale",
+              "insider"
+            ]
+          },
+          "category": {
+            "type": "string"
+          }
+        }
+      },
+      "WebhookCreated": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "callback_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "filters": {
+            "$ref": "#/components/schemas/WebhookFilters"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "secret": {
+            "type": "string",
+            "description": "HMAC signing key (`whsec_…`) for the `X-CrowdIntel-Signature` header. Returned ONCE — store it now.",
+            "example": "whsec_..."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "callback_url",
+          "filters",
+          "active",
+          "secret",
+          "created_at"
+        ]
+      },
+      "Webhook": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "callback_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "filters": {
+            "$ref": "#/components/schemas/WebhookFilters"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "secret": {
+            "type": "null",
+            "description": "Always null — the secret is only ever returned at creation."
+          },
+          "last_fired_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "last_failed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "callback_url",
+          "filters",
+          "active",
+          "secret",
+          "created_at"
+        ]
+      },
+      "ParityScore": {
+        "type": "object",
+        "properties": {
+          "run_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "cohort": {
+            "type": "string",
+            "enum": [
+              "random",
+              "top"
+            ],
+            "description": "`random` samples all wallets uniformly; `top` samples the highest-volume wallets, where errors concentrate."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "raw",
+              "routed"
+            ],
+            "description": "`raw` scores the on-chain ledger alone; `routed` scores what the product actually serves."
+          },
+          "sign_pct": {
+            "type": "number",
+            "description": "Share of sampled wallets where we agree with Polymarket on up-vs-down."
+          },
+          "cent_pct": {
+            "type": "number",
+            "description": "Share where we match within $1 or 5%."
+          },
+          "n": {
+            "type": "integer",
+            "description": "Wallets sampled in that run."
+          },
+          "pass": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ParityStatus": {
+        "type": "object",
+        "properties": {
+          "explanation": {
+            "type": "string",
+            "description": "Plain-language description of what the fields mean."
+          },
+          "scores": {
+            "type": "array",
+            "description": "Runs from the last 30 days, newest first.",
+            "items": {
+              "$ref": "#/components/schemas/ParityScore"
+            }
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "explanation",
+          "scores",
+          "generated_at"
+        ]
+      },
+      "Address": {
+        "type": "string",
+        "pattern": "^0x[0-9a-fA-F]{40}$",
+        "example": "0x0000000000000000000000000000000000000000"
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "unauthorized",
+                  "forbidden",
+                  "rate_limited",
+                  "not_found",
+                  "bad_request",
+                  "internal_error"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "request_id": {
+                "type": "string",
+                "description": "Echoed in the X-Request-Id header; quote it in support requests."
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "request_id"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "WalletStats": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "total_bets": {
+            "type": "integer"
+          },
+          "resolved_bets": {
+            "type": "integer"
+          },
+          "win_rate": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "bayesian_win_rate": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "total_volume": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "total_pnl": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "pnl_source": {
+            "type": "string",
+            "enum": [
+              "polymarket_api",
+              "ledger",
+              "none"
+            ],
+            "description": "Where the PnL figure comes from: `polymarket_api` = Polymarket's own profit figure, `ledger` = CrowdIntel on-chain cash ledger (retail wallets), `none` = no trustworthy figure yet (market-maker/whale wallets pending refresh report null/0)."
+          },
+          "pnl_as_of": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Freshness timestamp of the PnL figure; null when `pnl_source` is `none`."
+          },
+          "markets_traded": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        }
+      },
+      "WalletSignal": {
+        "type": "object",
+        "properties": {
+          "wallet": {
+            "$ref": "#/components/schemas/Address"
+          },
+          "smart_money_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Headline composite suspicion/edge score."
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Bayesian confidence in the score."
+          },
+          "breakdown": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Raw per-signal contribution breakdown."
+          },
+          "wallet_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stats": {
+            "$ref": "#/components/schemas/WalletStats"
+          }
+        }
+      },
+      "Sentiment": {
+        "type": "object",
+        "properties": {
+          "sentiment": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Label: bullish / bearish / mixed."
+          },
+          "yes_ratio": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "yes_volume": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "no_volume": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "total_whale_volume": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "unique_whales": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        }
+      },
+      "ImpliedProbability": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "yes_implied_prob": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "no_implied_prob": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "current_price": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "edge": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Whale-implied probability minus market price."
+          },
+          "samples": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "unique_wallets": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        }
+      },
+      "MarketSignal": {
+        "type": "object",
+        "properties": {
+          "market": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Market metadata (slug, title, category, condition id)."
+          },
+          "sentiment": {
+            "type": "object",
+            "properties": {
+              "direction": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "yes_ratio": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "yes_volume": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "no_volume": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "total_whale_volume": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "unique_whales": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            }
+          },
+          "smart_money_probability": {
+            "$ref": "#/components/schemas/ImpliedProbability"
+          }
+        }
+      },
+      "WalletEdge": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "$ref": "#/components/schemas/Address"
+          },
+          "polymarket_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "category_win_rate": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "global_win_rate": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "edge": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "bets": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "total_pnl": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        }
+      },
+      "MarketMover": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "volume": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "trade_count": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "net_flow": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        }
+      },
+      "WalletProfile": {
+        "type": "object",
+        "description": "Lite (`free`) or full dossier (`terminal`+). Lite is a subset of the full shape.",
+        "properties": {
+          "address": {
+            "$ref": "#/components/schemas/Address"
+          },
+          "polymarket_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "wallet_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stats": {
+            "$ref": "#/components/schemas/WalletStats"
+          },
+          "recent_trades": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Trade"
+            },
+            "description": "Full dossier only."
+          },
+          "alerts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "description": "Full dossier only."
+          },
+          "funding_cluster": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": true,
+            "description": "Full dossier only."
+          }
+        }
+      },
+      "WalletCategoryStat": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "bets": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "wins": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "win_rate": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "pnl": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "volume": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        }
+      },
+      "WalletTiming": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "$ref": "#/components/schemas/Address"
+          },
+          "buckets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string"
+                },
+                "count": {
+                  "type": "integer"
+                },
+                "win_rate": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "CorrelatedWallet": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "$ref": "#/components/schemas/Address"
+          },
+          "polymarket_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "shared_markets": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "same_side_ratio": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        }
+      },
+      "WalletSearchResult": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "$ref": "#/components/schemas/Address"
+          },
+          "polymarket_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "total_volume": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "total_pnl": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        }
+      },
+      "LeaderboardEntry": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "$ref": "#/components/schemas/Address"
+          },
+          "polymarket_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "total_volume": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "total_pnl": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "pnl_source": {
+            "type": "string",
+            "enum": [
+              "polymarket_api",
+              "ledger",
+              "none"
+            ],
+            "description": "Where the PnL figure comes from: `polymarket_api` = Polymarket's own profit figure, `ledger` = CrowdIntel on-chain cash ledger (retail wallets), `none` = no trustworthy figure yet (market-maker/whale wallets pending refresh report null/0)."
+          },
+          "pnl_as_of": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Freshness timestamp of the PnL figure; null when `pnl_source` is `none`."
+          },
+          "win_rate": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "z_score": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "total_bets": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        }
+      },
+      "CohortFloors": {
+        "type": "object",
+        "description": "The machine-readable membership floor. A wallet must clear EVERY populated field to be a member; the query layer applies these verbatim and `floor_lines` is the same object rendered as copy. Absent fields are not enforced. No cohort has a raw win-rate floor.",
+        "properties": {
+          "min_resolved_bets": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Minimum resolved bets. Always ≥ 1."
+          },
+          "min_pnl": {
+            "type": "number",
+            "description": "Minimum PnL in USD. `0` means strictly positive PnL."
+          },
+          "min_bayesian_win_rate": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Minimum sample-size-shrunk win rate (0–1). Never the raw per-fill `win_rate`."
+          },
+          "min_confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Minimum win-rate confidence (0–1)."
+          },
+          "exclude_machines": {
+            "type": "boolean",
+            "description": "Drop market-maker bots and classified bots."
+          },
+          "wallet_class": {
+            "type": "string",
+            "enum": [
+              "whale",
+              "mm_bot"
+            ],
+            "description": "Restrict to one wallet class."
+          },
+          "first_seen_within_days": {
+            "type": "integer",
+            "description": "Wallet first appeared on-chain within this many days."
+          },
+          "category": {
+            "type": "string",
+            "description": "Market category the cohort scores within. Only the (currently disabled) category cohorts set this."
+          }
+        }
+      },
+      "CohortDefinition": {
+        "type": "object",
+        "description": "One registry entry. Registry-only — no member rows and no member count.",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "Stable public id and path segment. Never renamed.",
+            "example": "deep-sample-winners"
+          },
+          "title": {
+            "type": "string",
+            "example": "Deep-Sample Winners"
+          },
+          "thesis": {
+            "type": "string",
+            "description": "One sentence saying what the cohort selects for."
+          },
+          "group": {
+            "type": "string",
+            "enum": [
+              "standing",
+              "rotating",
+              "machines"
+            ],
+            "description": "`standing` = durable; `rotating` = windowed, so a small member count means the window rather than breakage; `machines` = bots, useful to model or to exclude, not a skill board."
+          },
+          "order": {
+            "type": "integer",
+            "description": "Editorial order within the group — not a ranking of quality and not a member count."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "wallet_stats",
+              "wallet_category_stats"
+            ],
+            "description": "Which pre-aggregated rollup the cohort reads."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "pnl",
+              "volume",
+              "resolved_bets",
+              "win_rate"
+            ],
+            "description": "Default sort key when `?sort=` is omitted."
+          },
+          "sortable": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "pnl",
+                "volume",
+                "resolved_bets",
+                "win_rate"
+              ]
+            },
+            "description": "Sort keys this cohort accepts. Anything else returns `400`."
+          },
+          "max_rows": {
+            "type": "integer",
+            "description": "Pagination depth cap. A cursor past this returns `400 bad_request`."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "False when the underlying data cannot support the claim. Disabled cohorts are still listed here, and requesting one from `/v1/cohorts/{slug}` returns `400`."
+          },
+          "disabled_reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Public explanation when `enabled` is false; `null` otherwise. Quote it rather than reporting the cohort as empty."
+          },
+          "floors": {
+            "$ref": "#/components/schemas/CohortFloors"
+          },
+          "floor_lines": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "`floors` rendered as public copy, derived from the same object the query enforces. Display these strings instead of retyping a threshold."
+          }
+        }
+      },
+      "CohortMember": {
+        "type": "object",
+        "description": "One wallet clearing the cohort floor, read from the pre-aggregated wallet rollups.",
+        "properties": {
+          "address": {
+            "$ref": "#/components/schemas/Address"
+          },
+          "polymarket_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "polymarket_avatar": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "wallet_type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Legacy classification label."
+          },
+          "wallet_class": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Wallet class (e.g. `whale`, `mm_bot`); `null` reads as retail."
+          },
+          "resolved_bets": {
+            "type": "integer"
+          },
+          "win_rate": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Raw per-fill win rate, carried for continuity only. It is contaminated and is never a sort key or a floor — use `bayesian_win_rate`."
+          },
+          "bayesian_win_rate": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Sample-size-shrunk win rate (0–1). What `sort=win_rate` ranks on."
+          },
+          "confidence": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Confidence in the win-rate estimate (0–1), driven by sample size."
+          },
+          "total_volume": {
+            "type": "number"
+          },
+          "pnl": {
+            "type": "number",
+            "description": "Ranked PnL: Polymarket's own reported figure when present, else CrowdIntel's on-chain ledger figure."
+          },
+          "polymarket_pnl": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Polymarket's reported figure, or `null` when it has never been synced for this wallet."
+          },
+          "ledger_pnl": {
+            "type": "number",
+            "description": "CrowdIntel's on-chain ledger figure."
+          },
+          "markets_traded": {
+            "type": "integer"
+          },
+          "first_seen_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "First on-chain appearance. Populated only for windowed cohorts (those with a `first_seen_within_days` floor); `null` elsewhere."
+          },
+          "pnl_synced_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When `polymarket_pnl` was last refreshed. Feeds the page's `data_as_of`."
+          },
+          "last_updated": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When this rollup row was last written. Feeds the page's `data_as_of`."
+          }
+        }
+      },
+      "MarketDetail": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "condition_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resolved_outcome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stats": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "top_yes_holders": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "top_no_holders": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "price_history": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        }
+      },
+      "MarketFlow": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string"
+          },
+          "window_minutes": {
+            "type": "integer"
+          },
+          "whales_only": {
+            "type": "boolean"
+          },
+          "total_volume": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "net_yes": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "net_no": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "buckets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        }
+      },
+      "MarketListItem": {
+        "type": "object",
+        "properties": {
+          "condition_id": {
+            "type": "string",
+            "description": "On-chain condition id — the stable primary key, and the keyset cursor."
+          },
+          "slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "image": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_yes_price": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Most recent YES-side price, 0..1."
+          }
+        }
+      },
+      "MarketListPage": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "max_limit": {
+            "type": "integer",
+            "description": "Largest page size this key's tier allows."
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MarketListItem"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "MarketCandle": {
+        "type": "object",
+        "properties": {
+          "ts": {
+            "type": "integer",
+            "description": "Bucket start, unix ms (UTC)."
+          },
+          "open": {
+            "type": "number",
+            "description": "First trade price in the bucket."
+          },
+          "high": {
+            "type": "number"
+          },
+          "low": {
+            "type": "number"
+          },
+          "close": {
+            "type": "number",
+            "description": "Last trade price in the bucket."
+          },
+          "vwap": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Volume-weighted average price; null when volume is 0."
+          },
+          "volume_shares": {
+            "type": "number"
+          },
+          "volume_usd": {
+            "type": "number"
+          },
+          "trades": {
+            "type": "integer",
+            "description": "Deduplicated fill count."
+          },
+          "buys": {
+            "type": "integer"
+          },
+          "sells": {
+            "type": "integer"
+          },
+          "quality": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "degraded"
+            ],
+            "description": "`degraded` = fills in this window are not outcome-attributable, so volume is understated. Price is unaffected."
+          }
+        }
+      },
+      "MarketCandlePage": {
+        "type": "object",
+        "properties": {
+          "condition_id": {
+            "type": "string"
+          },
+          "token_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Outcome token the series was built from."
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "That token's outcome label, e.g. 'Yes'."
+          },
+          "interval": {
+            "type": "string"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MarketCandle"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "MarketRank": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "whale_volume": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "price_change": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "trade_count": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        }
+      },
+      "MarketAnalysis": {
+        "type": "object",
+        "properties": {
+          "market_slug": {
+            "type": "string"
+          },
+          "market_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "market_category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "condition_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "smart_money_prob": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "market_price": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "divergence": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "smart_money_prob - market_price."
+          },
+          "sample_wallets": {
+            "type": "integer"
+          },
+          "top_positions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "address": {
+                  "$ref": "#/components/schemas/Address"
+                },
+                "market_side": {
+                  "type": "string",
+                  "enum": [
+                    "YES",
+                    "NO"
+                  ]
+                },
+                "volume": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "trade_count": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "wallet_type": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "win_rate": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "total_pnl": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "polymarket_name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "sentiment": {
+            "$ref": "#/components/schemas/Sentiment"
+          },
+          "flow_24h": {
+            "type": "object",
+            "properties": {
+              "window_minutes": {
+                "type": "integer"
+              },
+              "whales_only": {
+                "type": "boolean"
+              },
+              "relaxed": {
+                "type": "boolean"
+              },
+              "total_volume": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "net_yes": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "net_no": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "buckets": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "computed_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SybilCluster": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "funder": {
+            "$ref": "#/components/schemas/Address"
+          },
+          "members": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "total_volume": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "total_pnl": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        }
+      },
+      "ClusterGraph": {
+        "type": "object",
+        "properties": {
+          "funder": {
+            "$ref": "#/components/schemas/Address"
+          },
+          "proxy_count": {
+            "type": "integer"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "node_count": {
+            "type": "integer"
+          },
+          "edge_count": {
+            "type": "integer"
+          },
+          "total_volume": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "total_bets": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "funder",
+                    "proxy"
+                  ]
+                },
+                "bets": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "wins": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "win_rate": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "pnl": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "volume": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "edges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string"
+                },
+                "target": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "InvestigationSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "slug": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "p_value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "win_rate": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "total_pnl": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "wallet_count": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "Investigation": {
+        "type": "object",
+        "description": "Full investigation. Extends the summary with wallets, evidence, and methodology.",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "slug": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "p_value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "win_rate": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "total_pnl": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "wallets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "evidence": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "Trade": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "tx_hash": {
+            "type": "string"
+          },
+          "proxy_wallet": {
+            "$ref": "#/components/schemas/Address"
+          },
+          "condition_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "market_slug": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "market_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "side": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "BUY",
+              "SELL",
+              null
+            ]
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What the trader bet on (e.g. 'Yes'), not WIN/LOSS."
+          },
+          "price": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "size": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "bet_value_usd": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "trade_timestamp": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "WalletConnection": {
+        "type": "object",
+        "description": "One typed funding-graph link, normalised to the counterparty.",
+        "properties": {
+          "counterparty": {
+            "$ref": "#/components/schemas/Address"
+          },
+          "edge_type": {
+            "type": "string",
+            "enum": [
+              "deposit_reuse",
+              "distributor",
+              "gas",
+              "usdc_cex",
+              "temporal"
+            ],
+            "description": "deposit_reuse = shared CEX deposit address; distributor = zero-balance pass-through; gas = POL top-up provider; usdc_cex = direct CEX link; temporal = coordinated trade timing."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "outgoing",
+              "incoming"
+            ],
+            "description": "outgoing = wallet is the edge source; incoming = wallet is the edge destination."
+          },
+          "confidence": {
+            "type": "number",
+            "description": "1 = raw on-chain transfer. **< 0.5 = heuristic/weak inference** (deposit-reuse off a shared sweep signature, temporal co-timing) — a lead, not proof."
+          },
+          "total_amount": {
+            "type": "number"
+          },
+          "transfer_count": {
+            "type": "integer"
+          },
+          "first_seen_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_seen_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "counterparty_label": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Exchange label if the counterparty is a known CEX address, else null."
+          }
+        }
+      },
+      "WalletConnections": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "$ref": "#/components/schemas/Address"
+          },
+          "cluster_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The wallet's persistent cluster id if it belongs to one, else null."
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "member | intermediary | funder within its cluster, or null when unclustered."
+          },
+          "connection_count": {
+            "type": "integer"
+          },
+          "connections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WalletConnection"
+            }
+          }
+        }
+      },
+      "ClusterMember": {
+        "type": "object",
+        "properties": {
+          "wallet": {
+            "$ref": "#/components/schemas/Address"
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "member | intermediary | funder."
+          }
+        }
+      },
+      "ClusterDetail": {
+        "type": "object",
+        "description": "A persistent funding cluster: pre-aggregated stats plus a capped member list.",
+        "properties": {
+          "cluster_id": {
+            "type": "string",
+            "example": "clu_0x00493aa44bcfd6f0c2ecc7f8b154e4fb352d1c81"
+          },
+          "member_count": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "total_pnl": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "avg_win_rate": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "total_bets": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "dominant_edge_type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Mode of the member edge types (deposit_reuse | distributor | gas | usdc_cex | temporal)."
+          },
+          "top_funder": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "computed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "members": {
+            "type": "array",
+            "description": "Cluster members (wallet + role), capped at 500, ordered by address.",
+            "items": {
+              "$ref": "#/components/schemas/ClusterMember"
+            }
+          }
+        }
+      },
+      "CryptoTwapTick": {
+        "type": "object",
+        "properties": {
+          "ts": {
+            "type": "integer",
+            "description": "Chainlink observation time, unix ms."
+          },
+          "received_ts": {
+            "type": "integer",
+            "description": "Feed delivery time, unix ms."
+          },
+          "latency_ms": {
+            "type": "integer",
+            "description": "Delivery lag behind the observation. Typically ~1.4s."
+          },
+          "symbol": {
+            "type": "string",
+            "example": "btc/usd"
+          },
+          "window_seconds": {
+            "type": "integer",
+            "enum": [
+              0,
+              30,
+              60
+            ],
+            "description": "30 settles 5-minute markets, 60 settles 15-minute markets, 0 is the Chainlink spot reference (not a TWAP)."
+          },
+          "value": {
+            "type": "number",
+            "description": "Convenience float. Lossy above 2^53 — BTC already exceeds that. Settle on `value_e18`."
+          },
+          "value_e18": {
+            "type": "string",
+            "description": "The exact E18 fixed-point integer, as a string. This is the value settlement is decided on.",
+            "example": "64260125233995673763840"
+          }
+        }
+      },
+      "CryptoTwapPage": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Echo of the requested symbol filter."
+          },
+          "window": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Echo of the requested window filter."
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CryptoTwapTick"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "CryptoTwapCoverage": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "example": "btc/usd"
+          },
+          "window_seconds": {
+            "type": "integer",
+            "enum": [
+              0,
+              30,
+              60
+            ]
+          },
+          "ticks": {
+            "type": "integer"
+          },
+          "first_ts": {
+            "type": "integer",
+            "description": "Oldest observation held, unix ms. Nothing before this exists."
+          },
+          "last_ts": {
+            "type": "integer",
+            "description": "Newest observation held, unix ms."
+          }
+        }
+      },
+      "CryptoTwapCoveragePage": {
+        "type": "object",
+        "properties": {
+          "windows": {
+            "type": "object",
+            "description": "What each window means, so a caller need not infer it from the numbers."
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CryptoTwapCoverage"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "MarketTwapWindowPage": {
+        "type": "object",
+        "properties": {
+          "condition_id": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "symbol": {
+            "type": "string",
+            "description": "The feed symbol this market settles against.",
+            "example": "btc/usd"
+          },
+          "settles_at": {
+            "type": "integer",
+            "description": "Market close, unix ms — the instant the settlement TWAP is taken."
+          },
+          "window": {
+            "type": "integer",
+            "enum": [
+              30,
+              60
+            ],
+            "description": "The window used, echoing your request."
+          },
+          "window_mean": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Mean of `value` across the returned observations; null when nothing was captured."
+          },
+          "coverage": {
+            "type": "string",
+            "enum": [
+              "none",
+              "partial",
+              "complete"
+            ],
+            "description": "`none` = the market settled before recording began (permanent for anything before capture start — the feed has no history). `partial` = fewer observations than the feed's ~1/s cadence implies. `complete` = the window is covered. An empty `data` array on its own cannot distinguish \"unrecorded\" from \"flat\"."
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CryptoTwapTick"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

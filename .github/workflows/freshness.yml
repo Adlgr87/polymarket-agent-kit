@@ -31,6 +31,14 @@ jobs:
           echo "mcp endpoint -> $code"
           test "$code" = "401" || test "$code" = "200"
 
+      - name: Refresh the vendored OpenAPI spec
+        run: |
+          set -euo pipefail
+          # The live spec is the source of truth; vendoring it keeps the repo
+          # self-contained for agents while the weekly job stops it drifting.
+          curl -fsS -m 30 https://crowdintel.xyz/openapi.json -o openapi.json
+          python3 -c "import json;json.load(open('openapi.json'))"
+
       - name: Stamp freshness.json
         run: |
           set -euo pipefail
@@ -43,7 +51,7 @@ jobs:
           set -euo pipefail
           git config user.name  "crowdintel-bot"
           git config user.email "bot@crowdintel.xyz"
-          git add docs/freshness.json
+          git add docs/freshness.json openapi.json
           git diff --cached --quiet && echo "unchanged" && exit 0
           git commit -m "chore: weekly freshness stamp"
           git push

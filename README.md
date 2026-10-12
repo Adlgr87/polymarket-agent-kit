@@ -83,6 +83,7 @@ Every tool answers on a free token; paid tiers raise the caps (see [pricing](htt
 - [docs/comparison.md](docs/comparison.md) — honest comparison, including when to use the official CLOB, a raw dataset, or Bitquery instead.
 - [docs/tools.md](docs/tools.md) — every tool, by group.
 - [examples/](examples/) — Python screener, TypeScript webhook receiver, MCP config.
+- [openapi.json](openapi.json) — the full REST spec (40 endpoints), refreshed weekly by CI.
 
 *Last updated: 2026-08-16 · 1.88B fills · 2.13M markets · 3.06M scored wallets ([freshness](docs/freshness.json)).*
 
