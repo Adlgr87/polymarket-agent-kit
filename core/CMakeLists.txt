@@ -340,6 +340,13 @@ set_target_properties(test_daily_volume_persist PROPERTIES
 
 add_test(NAME daily_vol_cap COMMAND $<TARGET_FILE:test_daily_volume_cap>)
 add_test(NAME daily_volume_persist COMMAND $<TARGET_FILE:test_daily_volume_persist>)
+
+# P1: WebSocket session manager
+add_executable(test_ws_session ../tests/unit/test_ws_session.cpp)
+crowdintel_target(test_ws_session)
+set_target_properties(test_ws_session PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+add_test(NAME ws_session COMMAND $<TARGET_FILE:test_ws_session>)
 add_test(NAME layer_units COMMAND $<TARGET_FILE:test_layers>)
 add_test(NAME ofi_units COMMAND $<TARGET_FILE:test_ofi>)
 add_executable(test_fee_consistency ../tests/unit/test_fee_consistency.cpp)
