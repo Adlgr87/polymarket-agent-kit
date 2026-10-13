@@ -348,6 +348,20 @@ set_target_properties(test_l2_archive PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 add_test(NAME l2_archive COMMAND $<TARGET_FILE:test_l2_archive>)
 
+# P3: Market discovery
+add_executable(test_market_discovery ../tests/unit/test_market_discovery.cpp)
+crowdintel_target(test_market_discovery)
+set_target_properties(test_market_discovery PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+add_test(NAME market_discovery COMMAND $<TARGET_FILE:test_market_discovery>)
+
+# P4: Paper trading broker
+add_executable(test_paper_broker ../tests/unit/test_paper_broker.cpp)
+crowdintel_target(test_paper_broker)
+set_target_properties(test_paper_broker PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+add_test(NAME paper_broker COMMAND $<TARGET_FILE:test_paper_broker>)
+
 # P1: WebSocket session manager
 add_executable(test_ws_session ../tests/unit/test_ws_session.cpp)
 crowdintel_target(test_ws_session)
