@@ -341,6 +341,13 @@ set_target_properties(test_daily_volume_persist PROPERTIES
 add_test(NAME daily_vol_cap COMMAND $<TARGET_FILE:test_daily_volume_cap>)
 add_test(NAME daily_volume_persist COMMAND $<TARGET_FILE:test_daily_volume_persist>)
 
+# P2: L2 book archive
+add_executable(test_l2_archive ../tests/unit/test_l2_archive.cpp)
+crowdintel_target(test_l2_archive)
+set_target_properties(test_l2_archive PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+add_test(NAME l2_archive COMMAND $<TARGET_FILE:test_l2_archive>)
+
 # P1: WebSocket session manager
 add_executable(test_ws_session ../tests/unit/test_ws_session.cpp)
 crowdintel_target(test_ws_session)
