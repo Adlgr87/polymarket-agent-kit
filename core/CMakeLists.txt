@@ -369,6 +369,13 @@ set_target_properties(test_maker_bid_metrics PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 add_test(NAME maker_bid_metrics COMMAND $<TARGET_FILE:test_maker_bid_metrics>)
 
+# P6: Nightly audit ledger
+add_executable(test_nightly_audit ../tests/unit/test_nightly_audit.cpp)
+crowdintel_target(test_nightly_audit)
+set_target_properties(test_nightly_audit PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+add_test(NAME nightly_audit COMMAND $<TARGET_FILE:test_nightly_audit>)
+
 # P1: WebSocket session manager
 add_executable(test_ws_session ../tests/unit/test_ws_session.cpp)
 crowdintel_target(test_ws_session)

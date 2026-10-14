@@ -521,7 +521,7 @@ private:
         // Fee: taker only (maker rebate NOT credited)
         double fee = 0.0;
         if (filled && style == "TAKER") {
-            fee = FeeCalculator::taker_fee(intent.px);
+            fee = FeeCalculator::taker_fee(intent.px) * (double)sh;
         }
 
         PaperFill fill;

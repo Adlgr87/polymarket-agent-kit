@@ -252,8 +252,8 @@ int main() {
         auto fills = broker.settle();
         CHECK(fills.size() >= 1, "fill produced");
         // FeeCalculator::taker_fee(0.50) = 0.072 * 0.50 * 0.50 = 0.018
-        double expected_fee = 0.072 * 0.50 * (1.0 - 0.50);
-        CHECK(fills[0].fee == expected_fee, "taker fee = 0.072 × p × (1-p)");
+        double expected_fee = FeeCalculator::taker_fee(0.50) * 200;
+        CHECK(fills[0].fee == expected_fee, "taker fee = 0.072 × p × (1-p) × shares");
     }
 
     // ── Test 6: TTL expiry → MISSED ───────────────────────────────────────────
