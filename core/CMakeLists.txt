@@ -362,6 +362,13 @@ set_target_properties(test_paper_broker PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 add_test(NAME paper_broker COMMAND $<TARGET_FILE:test_paper_broker>)
 
+# P5: Maker-bid fill-rate metric
+add_executable(test_maker_bid_metrics ../tests/unit/test_maker_bid_metrics.cpp)
+crowdintel_target(test_maker_bid_metrics)
+set_target_properties(test_maker_bid_metrics PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+add_test(NAME maker_bid_metrics COMMAND $<TARGET_FILE:test_maker_bid_metrics>)
+
 # P1: WebSocket session manager
 add_executable(test_ws_session ../tests/unit/test_ws_session.cpp)
 crowdintel_target(test_ws_session)
